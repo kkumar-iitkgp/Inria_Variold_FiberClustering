@@ -1,32 +1,32 @@
-// Created on 04/12/2016 by Kuldeep Kumar. Base code from Pietro Gori, Inria
+// Created on 17/08/2016 by Pietro Gori, Inria
 //
 // C++ function that takes as input a fiber bundle in .VTK format and computes the
 // gramiam matrix between all streamlines. Every cell of the gramiam matrix is
-// the inner product between two streamlines in the framework of varifolds
+// the inner product between two streamlines in the framework of weighted
+// currents.
 //
 // Usage: Gramiam FiberBundle dimension lambdaW Lambda_Start Lambda_End
 //
 // Input Parameters:
 //	- FiberBundle: filename fiber bundle in .vtk format
-//      - MicroStructureFile: filename for Microsturture measure file
 //	- dimension: dimension of the points of the stremlines (i.e. 3 for 3D)
-//	- lambdaW: bandwidth of the geometric kernel of varifolds
-//	- Lambda_EP: bandwidth of kernel for end points
-//	- Lambda_MSM: bandwidth of kernel for MSM difference
+//	- lambdaW: bandwidth of the geometric kernel of usual currents
+//	- Lambda_Start: bandwidth of kernel relative to the starting points
+//	- Lambda_End: bandwidth of kernel relative to the ending points
 // To note: Streamlines must have a consistent orientation ! For instance they
 // should all have the same starting and ending ROIs (Region Of Interest)
 //
 // Outputs:
 // 3 binary files, let N be equal to the number of streamlines
-//	- varifold_graph.diag: it is a vector [Nx1] with the squared norm of each streamline.
+//	- graph.diag: it is a vector [Nx1] with the squared norm of each streamline.
 //                Every value is saved as a char of 4 bits
-//	- varifold_graph.bin: It is a vector of char. If first writes the number of Nodes
+//	- graph.bin: It is a vector of char. If first writes the number of Nodes
 //	            (i.e. number fo streamlines) as a char of 4 bits. Then it writes
 //							the cumulative degree sequence, which means that for each
 //							streamline i it writes the number of streamlines that have an
 //							inner product greater than 0 as a char of 8 bits. Then it writes
 //							the numbers of all these streamlines as a char of 4 bits.
-//	- varifold_graph.weights: A vector with the inner products different from 0 between
+//	- graph.weights: A vector with the inner products different from 0 between
 //									 the streamlines. They are chars of 4 bits. The squared norm
 //                   of each streamline is not considered.
 //
@@ -87,9 +87,9 @@ using namespace Eigen;
 
 int main(int argc, char** argv)
 {
-	if (argc < 9 )
+	if (argc < 6 )
 	{
-		std::cerr << "Usage: " << argv[0] << " FiberBundle MicroStructureFileName dimension lambdaW Lambda_EP Lambda_MSM flag_EP flag_MSM" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " FiberBundle dimension lambdaW Lambda_Start Lambda_End" << std::endl;
 		return -1;
 	}
 
@@ -109,16 +109,13 @@ int main(int argc, char** argv)
 
 	// Reading Parameters
 	char* Bundle_name = argv[1];
-	char* MSMfile_name = argv[2];
-	int Dimension = atoi(argv[3]);
-	double lambdaW = atof(argv[4]);
-	double lambdaA = atof(argv[5]);
-	double lambdaB = atof(argv[6]);
-	unsigned int flag_EndPoint = atoi(argv[7]);
-	unsigned int flag_MSM = atoi(argv[8]);
+	int Dimension = atoi(argv[2]);
+	double lambdaW = atof(argv[3]);
+	double lambdaA = atof(argv[4]);
+	double lambdaB = atof(argv[5]);
 
 	cout << "Bundle to analyse: " << Bundle_name << endl;
-	cout << "Lambda geometry: " << lambdaW << "\nLambda End Points: " << lambdaA << "\nLambda MicroStrutureMeasure: " << lambdaB << "\nFlag for EndPoints: " << flag_EndPoint << "\nFlag for MicroStrcutureMeasure :" << flag_MSM <<endl;
+	cout << "Lambda geometry: " << lambdaW << "\nLambda Start (basal): " << lambdaA << "\nLambda End (cortical): " << lambdaB << endl;
 
 	//Creating polydata
 	vtkSmartPointer<vtkPolyDataReader> reader = vtkSmartPointer<vtkPolyDataReader>::New();
@@ -144,22 +141,17 @@ int main(int argc, char** argv)
 	MatrixXf Last;
 	MatrixXf c1; // Matrix of double
 	MatrixXf t1;
-	VectorXf m1;
 	VectorXf f1; // Vector of double
 	VectorXf l1;
 	MatrixXf c2;
 	MatrixXf t2;
-	VectorXf m2;
 	VectorXf f2;
 	VectorXf l2;
 	RowVectorXf point;
 	RowVectorXf p0;
 	RowVectorXf p1;
-	VectorXf MSMpoint; 
-
-	vector< MatrixXf > ListMSMperPointFibers;
-	vector< MatrixXf > MSMeasure;
 	
+
 	// Reading the polydata
 	NumFibers = polyData->GetNumberOfLines();
 	cout << "Number fibers: " << NumFibers << endl;
@@ -197,56 +189,31 @@ int main(int argc, char** argv)
 		 }
 	}
 
-	
-
-	
-
-	float MSMdataArray[NumberOfPoints];
-	//Reading the Micro-strcutre measure file
-	  ifstream myfile;
-	  myfile.open(MSMfile_name, fstream::in | fstream::binary);
-	 
-	  myfile.read((char*)(&MSMdataArray), sizeof(MSMdataArray));
-	  myfile.close();
-
-	cout << "\n List points per fiber " << endl ;
-
 	// List Points per Fiber
 	unsigned int temp = 0;
 	ListPointsFibers.resize(NumFibers);
-	ListMSMperPointFibers.resize(NumFibers);
-	float temp_MSM_point;
-	MSMpoint.resize(1);
+
 	for (unsigned int lineCount = 0; lineCount<NumFibers; lineCount++)
 	{
 		ListPointsFibers[lineCount].resize(NumberPointsPerFiber(lineCount), Dimension);
-		ListMSMperPointFibers[lineCount].resize(NumberPointsPerFiber(lineCount),1);
 		for (unsigned int i = 0; i < NumberPointsPerFiber(lineCount,0); i++)
 		{
 			point = Points.row(temp);
-			temp_MSM_point = MSMdataArray[temp];
-			MSMpoint[0]= temp_MSM_point ;
 			ListPointsFibers[lineCount].row(i)=point;
-			//ListMSMperPointFibers[lineCount].row[i]= temp_MSM_point;
-			ListMSMperPointFibers[lineCount].row(i)= MSMpoint;
 			temp++;
 		}
 	}
-	
-	cout << "\nCompute centers, tangents MSM" << endl;
- 	
-	// Computing centers, tangents, MicroStructureMeasure, first and last points
+
+	// Computing centers, tangents, first and last points
 	Centers.resize(NumFibers);
 	Tangents.resize(NumFibers);
 	First.resize(NumFibers,Dimension);
 	Last.resize(NumFibers,Dimension);
-	MSMeasure.resize(NumFibers);
 
 	for (unsigned int i = 0; i < NumFibers; i++)
 	{
 		Centers[i].resize(NumberPointsPerFiber(i)-1, Dimension);
 		Tangents[i].resize(NumberPointsPerFiber(i)-1, Dimension);
-		MSMeasure[i].resize(NumberPointsPerFiber(i)-1,1);
 		
 		First.row(i)=ListPointsFibers[i].row(0);
 		Last.row(i)=ListPointsFibers[i].row(NumberPointsPerFiber(i)-1);
@@ -257,10 +224,8 @@ int main(int argc, char** argv)
 			p1 = ListPointsFibers[i].row(j+1);
 			Centers[i].row(j) = (p0 + p1) / 2.0;
 			Tangents[i].row(j) = p1 - p0;
-			MSMeasure[i].row(j) = (ListMSMperPointFibers[i].row(j) + ListMSMperPointFibers[i].row(j+1)) / 2.0 ;
 		}
 	}
-
 
 	struct timeval start, end;
 	double delta;
@@ -275,28 +240,24 @@ int main(int argc, char** argv)
 	{
 		c1.setZero(NumberPointsPerFiber(i)-1, Dimension);
 		t1.setZero(NumberPointsPerFiber(i)-1, Dimension);
-		m1.setZero(NumberPointsPerFiber(i)-1);
 		f1.setZero(Dimension);
 		l1.setZero(Dimension);
 
 		c1 = Centers[i];
 		t1 = Tangents[i];
-		m1 = MSMeasure[i];
 		f1 = First.row(i);
 		l1 = Last.row(i);
 
-		#pragma omp parallel for private(c2,t2,m2,f2,l2) shared(links,Diagonal,i,t1,c1,m1,f1,l1,lambdaW,lambdaA,lambdaB)
+		#pragma omp parallel for private(c2,t2,f2,l2) shared(links,Diagonal,i,t1,c1,f1,l1,lambdaW,lambdaA,lambdaB)
 		for(unsigned int j=i; j<NumFibers; j++)
 		{
 			c2.setZero(NumberPointsPerFiber(j)-1, Dimension);
 			t2.setZero(NumberPointsPerFiber(j)-1, Dimension);
-			m2.setZero(NumberPointsPerFiber(j)-1);
 			f2.setZero(Dimension);
 			l2.setZero(Dimension);
 
 			c2 = Centers[j];
 			t2 = Tangents[j];
-			m2 = MSMeasure[j];
 			f2 = First.row(j);
 			l2 = Last.row(j);
 
@@ -314,42 +275,21 @@ int main(int argc, char** argv)
 					tLen2 = (float)sqrt(t2.row(q)*t2.row(q).transpose());
 					res_tang = t1.row(p)*t2.row(q).transpose();
 					res_center = ( c1.row(p)-c2.row(q) ) * ( (c1.row(p)-c2.row(q)).transpose() );
-					if(flag_MSM > 0)
-					{
-						float res_msm = (m2(q) - m1(p));
-						// divide by the tangent weights and also use difference between Micro-Structure-Measure
-						norm2 = norm2+res_tang*res_tang*exp(-res_center/(lambdaW*lambdaW) -(res_msm*res_msm)/(lambdaB*lambdaB) )/(tLen1*tLen2);   
-					}
-					else
-					{					
-						norm2 = norm2+res_tang*res_tang*exp(-res_center/(lambdaW*lambdaW))/(tLen1*tLen2);   //  dividing by the tangent lengths
-					}
+					norm2 = norm2+res_tang*res_tang*exp(-res_center/(lambdaW*lambdaW))/(tLen1*tLen2);
 				}
 			}
 
 			// Computation of the other two kernels, only if the norm of usual currents
 			// is greater than 1e-7, otherwise it writes 0
 			float norm2_f = 0;
+			float res_f;
+			float res_l;
 			if (abs(norm2)>1e-7)
 			{
-				if(flag_EndPoint > 0 )
-				{
-					float res_f;
-					float res_l;
-					float res_f1f2 = (f1-f2).transpose()*(f1-f2);
-					float res_l1l2 = (l1-l2).transpose()*(l1-l2);
-					float res_f1l2 = (f1-l2).transpose()*(f1-l2);
-					float res_f2l1 = (l1-f2).transpose()*(l1-f2);
-
-					//  res_f = min(res_f1f2, res_l1l2, res_f1l2 res_f2l1)
-					res_f = (res_f1f2 + res_l1l2) / 2.0 ;
-
-					norm2_f = norm2 * exp(-res_f/(lambdaA*lambdaA));
-				}
-				else
-				{
-					norm2_f = norm2 ;
-				}				
+				//res_f = (f1-f2).transpose()*(f1-f2);
+				//res_l = (l1-l2).transpose()*(l1-l2);
+				//norm2_f = norm2 * exp(-res_f/(lambdaA*lambdaA) - res_l/(lambdaB*lambdaB));
+				norm2_f = norm2 ;
 
 				// If the norm is smaller than 1e-7, it writes 0
 				if (abs(norm2_f)>1e-7)
@@ -380,7 +320,7 @@ int main(int argc, char** argv)
 // Diagonal Element
 
 	ofstream Diag;
-  Diag.open("varifold_graph.diag", fstream::out | fstream::binary);
+  Diag.open("graph.diag", fstream::out | fstream::binary);
 	float element = 0;;
 	for(unsigned int i=0; i<NumFibers; i++)
 	{
@@ -393,10 +333,10 @@ int main(int argc, char** argv)
 // Gramiam
 
 	ofstream Gram;
-  	Gram.open("varifold_graph.bin", fstream::out | fstream::binary);
+  	Gram.open("graph.bin", fstream::out | fstream::binary);
 
 	ofstream Weights;
-  	Weights.open("varifold_graph.weights", fstream::out | fstream::binary);
+  	Weights.open("graph.weights", fstream::out | fstream::binary);
 
 	unsigned int s = links.size();
 	if (s!=NumFibers)

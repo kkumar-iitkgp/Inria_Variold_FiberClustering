@@ -299,8 +299,10 @@ int main(int argc, char** argv)
 			m2 = MSMeasure[j];
 			f2 = First.row(j);
 			l2 = Last.row(j);
+			float m2_mean = m2.mean();
+			float m1_mean = m1.mean();
 
-			// Computation norm usual currents
+			// Computation norm: varifolds
 			float norm2 = 0;
 			float res_tang;
 			float res_center;
@@ -314,7 +316,7 @@ int main(int argc, char** argv)
 					tLen2 = (float)sqrt(t2.row(q)*t2.row(q).transpose());
 					res_tang = t1.row(p)*t2.row(q).transpose();
 					res_center = ( c1.row(p)-c2.row(q) ) * ( (c1.row(p)-c2.row(q)).transpose() );
-					if(flag_MSM > 0)
+					if(flag_MSM == 2)
 					{
 						float res_msm = (m2(q) - m1(p));
 						// divide by the tangent weights and also use difference between Micro-Structure-Measure
@@ -339,16 +341,32 @@ int main(int argc, char** argv)
 					float res_f1f2 = (f1-f2).transpose()*(f1-f2);
 					float res_l1l2 = (l1-l2).transpose()*(l1-l2);
 					float res_f1l2 = (f1-l2).transpose()*(f1-l2);
-					float res_f2l1 = (l1-f2).transpose()*(l1-f2);
+					float res_l1f2 = (l1-f2).transpose()*(l1-f2);
 
 					//  res_f = min(res_f1f2, res_l1l2, res_f1l2 res_f2l1)
-					res_f = (res_f1f2 + res_l1l2) / 2.0 ;
+					if( (res_f1f2 < res_f1l2) )
+					{
+						res_f = (res_f1f2 + res_l1l2) / 2.0 ;  // average of two end points
+					}
+					else
+					{
+						res_f = (res_f1l2 + res_l1f2) / 2.0 ;
+					}
+					
+					//res_f = (res_f1f2 + res_l1l2 + res_f1l2 + res_l1f2) / 4.0 ;
 
-					norm2_f = norm2 * exp(-res_f/(lambdaA*lambdaA));
+					norm2_f = norm2 * exp(-res_f/(lambdaA*lambdaA));     // multiply norm with a scalar (EP info)
 				}
 				else
 				{
 					norm2_f = norm2 ;
+				}
+				
+				//If Micro-stricture scalar measure is used: mean along fiber
+				if(flag_MSM == 1)
+				{
+					float msm_scalar = m1_mean - m2_mean ;
+					norm2_f = norm2_f*exp(-(msm_scalar*msm_scalar)/(lambdaB*lambdaB)); // multiply the norm with a scalar (MSM info)
 				}				
 
 				// If the norm is smaller than 1e-7, it writes 0
